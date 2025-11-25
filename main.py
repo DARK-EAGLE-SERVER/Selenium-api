@@ -1,48 +1,67 @@
+import streamlit as st
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
 import time
-
-# -------------- CONFIG -----------------
-COOKIE_STRING = """sb=x-4VZxbqkmCAawFwsNZch1cr; m_pixel_ratio=2; ps_l=1; ps_n=1; usida=eyJ2ZXIiOjEsImlkIjoiQXNwa3poZzFqMWYwbmsiLCJ0aW1lIjoxNzM2MDIyNjM2fQ%3D%3D; oo=v1; vpd=v1%3B634x360x2; x-referer=eyJyIjoiL2NoZWNrcG9pbnQvMTUwMTA5MjgyMzUyNTI4Mi9sb2dvdXQvP25leHQ9aHR0cHMlM0ElMkYlMkZtLmZhY2Vib29rLmNvbSUyRiIsImgiOiIvY2hlY2twb2ludC8xNTAxMDkyODIzNTI1MjgyL2xvZ291dC8%2FbmV4dD1odHRwcyUzQSUyRiUyRm0uZmFjZWJvb2suY29tJTJGIiwicyI6Im0ifQ%3D%3D; pas=100018459948597%3AyY8iKAz4qS%2C61576915895165%3Ah3M07gRmIr%2C100051495735634%3AaWZGIhmpcN%2C100079959253161%3AERjtJDwIKY%2C100085135237853%3ASJzxBm80J0%2C100039111611241%3AYdPtkzDOqQ%2C61551133266466%3Aw3egO2jjPR%2C61580506865263%3AgBocX6ACyH%2C61580725287646%3Az32vfC8XFx%2C61580627947722%3ANGvvqUwSjM%2C61580696818474%3AOANvC0tEZ7; locale=en_GB; c_user=61580506865263; datr=g8olaZiZYQMO7uPOZr9LIPht; xs=13%3AQoLIRrRzRReDAA%3A2%3A1764084356%3A-1%3A-1; wl_cbv=v2%3Bclient_version%3A2985%3Btimestamp%3A1764084357; fbl_st=100727294%3BT%3A29401406; fr=1DU5Jl03wP4b7GP8t.AWefU_KjBG8Z5AZgumwZsBRycYqwUkK410GOJ9ACH6HquX9_4fk.BoxuDH..AAA.0.0.BpJcqK.AWdFN0M6cD-SLsdpO8kcmDP_8_s; presence=C%7B%22lm3%22%3A%22sc.800019873203125%22%2C%22t3%22%3A%5B%7B%22o%22%3A0%2C%22i%22%3A%22g.1160300088952219%22%7D%5D%2C%22utc3%22%3A1764084412300%2C%22v%22%3A1%7D; wd=1280x2254"""
-
-CHAT_URL = "https://www.facebook.com/messages/e2ee/t/800019873203125"
-MESSAGE = "aryan don hware yeh"
-DELAY = 30   # seconds
-# ---------------------------------------
+import json
 
 
-def parse_cookies(cookie_string):
-    cookies = []
-    for item in cookie_string.split(";"):
-        if "=" in item:
-            name, value = item.split("=", 1)
-            cookies.append({"name": name.strip(), "value": value.strip(), "domain": ".facebook.com"})
-    return cookies
+# ==========================
+# YOUR COOKIES (Converted to JSON List)
+# ==========================
+cookies = [
+    {"name": "sb", "value": "x-4VZxbqkmCAawFwsNZch1cr"},
+    {"name": "m_pixel_ratio", "value": "2"},
+    {"name": "ps_l", "value": "1"},
+    {"name": "ps_n", "value": "1"},
+    {"name": "usida", "value": "eyJ2ZXIiOjEsImlkIjoiQXNwa3poZzFqMWYwbmsiLCJ0aW1lIjoxNzM2MDIyNjM2fQ=="},
+    {"name": "oo", "value": "v1"},
+    {"name": "vpd", "value": "v1;634x360x2"},
+    {"name": "x-referer", "value": "eyJyIjoiL2NoZWNrcG9pbnQvMTUwMTA5MjgyMzUyNTI4Mi9sb2dvdXQvP25leHQ9aHR0cHMlM0ElMkYlMkZtLmZhY2Vib29rLmNvbSUyRiIsImgiOiIvY2hlY2twb2ludC8xNTAxMDkyODIzNTI1MjgyL2xvZ291dC8/bmV4dD1odHRwcyUzQSUyRiUyRm0uZmFjZWJvb2suY29tJTJGIiwicyI6Im0ifQ=="},
+    {"name": "pas", "value": "100018459948597:yY8iKAz4qS,61576915895165:h3M07gRmIr,100051495735634:aWZGIhmpcN,100079959253161:ERjtJDwIKY,100085135237853:SJzxBm80J0,100039111611241:YdPtkzDOqQ,61551133266466:w3egO2jjPR,61580506865263:gBocX6ACyH,61580725287646:z32vfC8XFx,61580627947722:NGvvqUwSjM,61580696818474:OANvC0tEZ7"},
+    {"name": "locale", "value": "en_GB"},
+    {"name": "c_user", "value": "61580506865263"},
+    {"name": "datr", "value": "g8olaZiZYQMO7uPOZr9LIPht"},
+    {"name": "xs", "value": "13:QoLIRrRzRReDAA:2:1764084356:-1:-1"},
+    {"name": "wl_cbv", "value": "v2;client_version:2985;timestamp:1764084357"},
+    {"name": "fbl_st", "value": "100727294;T:29401406"},
+    {"name": "fr", "value": "1DU5Jl03wP4b7GP8t.AWefU_KjBG8Z5AZgumwZsBRycYqwUkK410GOJ9ACH6HquX9_4fk.BoxuDH..AAA.0.0.BpJcqK.AWdFN0M6cD-SLsdpO8kcmDP_8_s"},
+    {"name": "presence", "value": "C{\"lm3\":\"sc.800019873203125\",\"t3\":[{\"o\":0,\"i\":\"g.1160300088952219\"}],\"utc3\":1764084412300,\"v\":1}"},
+    {"name": "wd", "value": "1280x2254"}
+]
+
+# ==========================
+# THREAD ID
+# ==========================
+THREAD_ID = "800019873203125"
 
 
+
+# ==========================
+# Selenium Driver Setup
+# ==========================
 def get_driver():
-    options = Options()
-    options.add_argument("--headless=new")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    chrome_options = Options()
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--disable-notifications")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_argument("--headless=new")
+
+    driver = webdriver.Chrome(options=chrome_options)
+    return driver
 
 
-def start_bot():
-    driver = get_driver()
-
-    print("[*] Opening Facebook...")
+# ==========================
+# Cookie Login
+# ==========================
+def login_with_cookies(driver):
     driver.get("https://www.facebook.com/")
-    time.sleep(3)
 
-    print("[*] Adding Cookies...")
-    for c in parse_cookies(COOKIE_STRING):
+    for c in cookies:
         try:
             driver.add_cookie(c)
         except:
@@ -51,29 +70,57 @@ def start_bot():
     driver.refresh()
     time.sleep(4)
 
-    print("[*] Opening Chat...")
-    driver.get(CHAT_URL)
-    time.sleep(6)
 
-    print("[*] Starting infinite messaging loop...")
+# ==========================
+# Message Sender
+# ==========================
+def send_msg(driver, msg, delay):
+    url = f"https://www.facebook.com/messages/e2ee/t/{THREAD_ID}"
+    driver.get(url)
+    time.sleep(5)
 
-    count = 1
-    while True:
-        try:
-            box = driver.find_element(By.XPATH, "//div[@role='textbox']")
-            box.click()
-            box.send_keys(MESSAGE)
-            time.sleep(1)
-            box.send_keys("\ue007")  # ENTER
+    try:
+        box = driver.find_element(By.CSS_SELECTOR, "div[aria-label='Message']")
+        ActionChains(driver).move_to_element(box).click().perform()
+        box.send_keys(msg)
 
-            print(f"[{count}] Sent: {MESSAGE}")
-            count += 1
+        time.sleep(1)
 
-        except Exception as e:
-            print("Error:", e)
+        send_btn = driver.find_element(By.CSS_SELECTOR, "div[aria-label='Press Enter to send']")
+        send_btn.click()
 
-        time.sleep(DELAY)
+        time.sleep(delay)
+        return True
+
+    except Exception as e:
+        return str(e)
 
 
-if __name__ == "__main__":
-    start_bot()
+
+# ==========================
+# STREAMLIT UI
+# ==========================
+st.title("🚀 Facebook Auto Message Sender")
+message = st.text_area("✉ Message", height=100)
+delay = st.number_input("⏱ Delay (seconds)", min_value=1, max_value=60, value=3)
+start = st.button("🔥 Send Message")
+
+if start:
+    if message.strip() == "":
+        st.error("⚠ Message empty hai veer!")
+    else:
+        st.info("🔄 Chrome Start ho reha...")
+        driver = get_driver()
+
+        st.info("🔑 Login with Cookies...")
+        login_with_cookies(driver)
+
+        st.info("📨 Sending Message...")
+        status = send_msg(driver, message, delay)
+
+        if status is True:
+            st.success("✅ Message Sent Successfully!")
+        else:
+            st.error(f"❌ Error: {status}")
+
+        driver.quit()
