@@ -7,9 +7,25 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 
 st.set_page_config(page_title="FB Auto Sender", layout="centered")
-st.title("FB Sender (The Hunter 🎯)")
+st.title("FB Sender (Force Send 🚀)")
+
+# --- LIVE LOGGER ---
+log_placeholder = st.empty()
+
+def log(message, level="info"):
+    """Live Logging Function"""
+    if level == "info":
+        log_placeholder.info(f"ℹ️ {message}")
+    elif level == "success":
+        log_placeholder.success(f"✅ {message}")
+    elif level == "error":
+        log_placeholder.error(f"❌ {message}")
+    elif level == "warn":
+        log_placeholder.warning(f"⚠️ {message}")
+    print(f"LOG: {message}")
 
 # --- USER INPUTS ---
 st.subheader("1. Login Details")
@@ -19,7 +35,7 @@ cookie_input = st.text_area("Cookie String", value=DEFAULT_COOKIE, height=100)
 user_pin = st.text_input("Enter 6-Digit PIN (Optional)", max_chars=6, type="password")
 
 st.subheader("2. Message Details")
-target_url = st.text_input("Chat URL", value="https://www.facebook.com/messages/e2ee/t/800019873203125")
+target_url = st.text_input("Chat URL", value="https://www.facebook.com/messages/e2ee/t/61558458805222")
 message_text = st.text_input("Message", value="Hello from Bot!")
 
 col1, col2 = st.columns(2)
@@ -47,6 +63,7 @@ def get_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     
+    # Path Detection
     chromium_path = shutil.which("chromium")
     chromedriver_path = shutil.which("chromedriver")
     
@@ -66,90 +83,104 @@ def get_driver():
         st.error("❌ Driver not found. Please REBOOT App.")
         return None
 
-# --- 🔥 ADVANCED HUNTER LOGIC 🔥 ---
+# --- HUNTER LOGIC (Popups Remover) ---
 def hunt_down_buttons(driver):
-    """
-    यह फंक्शन एक 'शिकारी' की तरह है। यह Continue, Restore और Close बटन को ढूंढेगा
-    और तब तक क्लिक करेगा जब तक Message Box नहीं मिल जाता।
-    """
-    st.info("⚔️ Hunter Mode Activated: Smashing Buttons...")
-
-    # हम 7 बार कोशिश करेंगे (Trying... Trying...)
-    for attempt in range(1, 8):
-        status_text = st.empty()
-        status_text.text(f"Attempt {attempt}/7: Scanning for blocks...")
-        
-        button_clicked = False
-        
-        # --- TARGET 1: CONTINUE BUTTON (Blue one from screenshot) ---
+    log("Hunter Mode Activated: Scanning for blocks...", "warn")
+    
+    for attempt in range(1, 6):
         try:
-            # Strategies to find 'Continue'
+            # 1. Continue/Restore Buttons
             xpaths = [
-                "//div[@role='button']//span[contains(text(), 'Continue')]", # Best match
-                "//*[text()='Continue']",
+                "//div[@role='button']//span[contains(text(), 'Continue')]",
+                "//*[contains(text(), 'restore messages')]",
                 "//div[@aria-label='Continue']"
             ]
-            
             for xpath in xpaths:
                 btns = driver.find_elements(By.XPATH, xpath)
                 for btn in btns:
                     if btn.is_displayed():
                         driver.execute_script("arguments[0].click();", btn)
-                        st.toast("Boom! Clicked 'Continue' 🔵")
-                        button_clicked = True
+                        log(f"Hunter: Clicked Button ({attempt})", "success")
                         time.sleep(2)
-        except:
-            pass
-
-        # --- TARGET 2: DON'T RESTORE BUTTON ---
-        try:
-            btns = driver.find_elements(By.XPATH, "//*[contains(text(), 'restore messages')]")
-            for btn in btns:
-                 driver.execute_script("arguments[0].click();", btn)
-                 st.toast("Boom! Clicked 'Don't Restore' 🛑")
-                 button_clicked = True
-                 time.sleep(2)
-        except:
-            pass
-
-        # --- TARGET 3: CLOSE (X) BUTTON ---
-        try:
+            
+            # 2. Close 'X' Button
             close_btns = driver.find_elements(By.CSS_SELECTOR, 'div[aria-label="Close"]')
             for btn in close_btns:
                 driver.execute_script("arguments[0].click();", btn)
-                st.toast("Closed Popup ❎")
-                button_clicked = True
-        except:
+                log("Hunter: Closed Popup X", "info")
+                
+        except Exception:
             pass
-
-        # --- CHECK SUCCESS ---
-        # अगर बटन दबाया है, तो चेक करो कि क्या मैसेज बॉक्स खुला?
+        
+        # Check if message box visible
         try:
-            msg_box = driver.find_element(By.CSS_SELECTOR, 'div[aria-label="Message"]')
-            if msg_box:
-                status_text.success("Target Destroyed. Message Box Found! ✅")
+            if driver.find_elements(By.CSS_SELECTOR, 'div[aria-label="Message"]'):
+                log("Target Destroyed. Path Clear! ✅", "success")
                 return True
         except:
             pass
-        
-        time.sleep(2) # अगली कोशिश से पहले सांस लो
+        time.sleep(1)
 
-    return False
+# --- 🔥 SAFE SEND LOGIC (The Fix) 🔥 ---
+def send_message_safely(driver, text):
+    """
+    यह फंक्शन Interception Error को बायपास करता है।
+    1. Element ढूंढता है।
+    2. Javascript से Focus सेट करता है (Mouse click नहीं)।
+    3. ActionChains से टाइप करता है (Overlay को ignore करके)।
+    """
+    selectors = [
+        'div[aria-label="Message"]', 
+        'div[contenteditable="true"]', 
+        'div[role="textbox"]'
+    ]
+    
+    msg_box = None
+    for selector in selectors:
+        try:
+            msg_box = driver.find_element(By.CSS_SELECTOR, selector)
+            if msg_box: break
+        except:
+            continue
+            
+    if msg_box:
+        try:
+            # STEP 1: Scroll to element (ताकि वह स्क्रीन पर आए)
+            driver.execute_script("arguments[0].scrollIntoView(true);", msg_box)
+            time.sleep(0.5)
+
+            # STEP 2: Javascript Force Focus (Click Fix)
+            # यह असली क्लिक नहीं करता, बस कर्सर को वहां ले जाता है
+            driver.execute_script("arguments[0].focus();", msg_box)
+            driver.execute_script("arguments[0].click();", msg_box) 
+            time.sleep(0.5)
+            
+            # STEP 3: ActionChains Typing (Interception Proof)
+            # यह सीधे कीबोर्ड इनपुट भेजता है, चाहे ऊपर कोई भी लेयर हो
+            actions = ActionChains(driver)
+            actions.send_keys(text)
+            actions.send_keys(Keys.RETURN)
+            actions.perform()
+            
+            return True
+        except Exception as e:
+            log(f"Send Error (Retrying): {e}", "error")
+            return False
+    else:
+        log("Message Box Not Found for Sending", "error")
+        return False
 
 # --- MAIN EXECUTION ---
 
 if st.button("Start Messaging"):
-    status_box = st.empty()
-    log_box = st.empty()
-    
     driver = get_driver()
     
     if driver:
         try:
-            status_box.text("Opening Facebook...")
+            log("Opening Facebook...", "info")
             driver.get("https://www.facebook.com/")
             
-            status_box.text("Adding Cookies...")
+            log("Injecting Cookies...", "info")
             cookies_list = parse_cookies(cookie_input)
             for cookie in cookies_list:
                 try:
@@ -157,65 +188,46 @@ if st.button("Start Messaging"):
                 except:
                     pass
             
-            status_box.text("Opening Chat...")
+            log(f"Navigating to Chat...", "info")
             driver.get(target_url)
             time.sleep(8) 
 
-            # --- 🔥 RUN THE HUNTER 🔥 ---
+            # --- RUN HUNTER ---
             hunt_down_buttons(driver)
-            # --------------------------
-
-            msg_box = None
-            selectors = [
-                'div[aria-label="Message"]', 
-                'div[contenteditable="true"]', 
-                'div[role="textbox"]'
-            ]
-
-            # Try to find message box
-            for selector in selectors:
-                try:
-                    msg_box = driver.find_element(By.CSS_SELECTOR, selector)
-                    if msg_box: break
-                except:
-                    continue
             
-            if msg_box:
-                count = 0
-                keep_running = True
-                while keep_running:
-                    try:
-                        # Re-find logic
-                        for selector in selectors:
-                            try:
-                                msg_box = driver.find_element(By.CSS_SELECTOR, selector)
-                                break
-                            except:
-                                continue
+            # --- START SENDING LOOP ---
+            count = 0
+            keep_running = True
+            
+            # Progress bar for visual
+            st.divider()
+            latest_status = st.empty()
+            
+            while keep_running:
+                success = send_message_safely(driver, message_text)
+                
+                if success:
+                    count += 1
+                    latest_status.success(f"Messages Sent: {count} ✅")
+                    
+                    if not enable_infinite:
+                        keep_running = False 
+                    else:
+                        time.sleep(delay_time)
+                else:
+                    log("Failed to send. Retrying...", "warn")
+                    # Screenshot for debugging
+                    driver.save_screenshot("debug_send_fail.png")
+                    st.image("debug_send_fail.png", caption="Error View")
+                    time.sleep(5)
+                    # Retry Hunter if popup came back
+                    hunt_down_buttons(driver)
 
-                        msg_box.click()
-                        msg_box.send_keys(message_text)
-                        msg_box.send_keys(Keys.RETURN)
-                        
-                        count += 1
-                        log_box.write(f"Messages Sent: {count} ✅")
-                        
-                        if not enable_infinite:
-                            keep_running = False 
-                        else:
-                            time.sleep(delay_time)
-                    except Exception as e:
-                        st.error(f"Sending Error: {e}")
-                        break
-                st.success("Done.")
-            else:
-                st.error("Message Box Not Found.")
-                st.caption("Last Screen State:")
-                driver.save_screenshot("final_check.png")
-                st.image("final_check.png")
+            st.balloons()
+            log("Task Completed Successfully.", "success")
 
         except Exception as e:
-            st.error(f"Critical Error: {e}")
+            st.error(f"Critical System Error: {e}")
         finally:
             if not enable_infinite:
                 driver.quit()
