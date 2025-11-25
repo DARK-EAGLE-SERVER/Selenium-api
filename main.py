@@ -9,15 +9,14 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
 st.set_page_config(page_title="FB Auto Sender", layout="centered")
-st.title("FB Sender (PIN & Popup Fix 🔐)")
+st.title("FB Sender (Aggressive Bypass 🚀)")
 
 # --- USER INPUTS ---
 st.subheader("1. Login Details")
 DEFAULT_COOKIE = "Sb=x-4VZxbqkmCAawFwsNZch1cr; m_pixel_ratio=2; ps_l=1; ps_n=1; usida=eyJ2ZXIiOjEsImlkIjoiQXNwa3poZzFqMWYwbmsiLCJ0aW1lIjoxNzM2MDIyNjM2fQ%3D%3D; oo=v1; vpd=v1%3B634x360x2; x-referer=eyJyIjoiL2NoZWNrcG9pbnQvMTUwMTA5MjgyMzUyNTI4Mi9sb2dvdXQvP25leHQ9aHR0cHMlM0ElMkYlMkZtLmZhY2Vib29rLmNvbSUyRiIsImgiOiIvY2hlY2twb2ludC8xNTAxMDkyODIzNTI1MjgyL2xvZ291dC8%2FbmV4dD1odHRwcyUzQSUyRiUyRm0uZmFjZWJvb2suY29tJTJGIiwicyI6Im0ifQ%3D%3D; pas=100018459948597%3AyY8iKAz4qS%2C61576915895165%3Ah3M07gRmIr%2C100051495735634%3AaWZGIhmpcN%2C100079959253161%3AERjtJDwIKY%2C100085135237853%3ASJzxBm80J0%2C100039111611241%3AYdPtkzDOqQ%2C61551133266466%3Aw3egO2jjPR%2C61580506865263%3AgBocX6ACyH%2C61580725287646%3Az32vfC8XFx%2C61580627947722%3NGvvqUwSjM%2C61580696818474%3AOANvC0tEZ7; locale=en_GB; c_user=61580506865263; datr=g8olaZiZYQMO7uPOZr9LIPht; xs=13%3AQoLIRrRzRReDAA%3A2%3A1764084356%3A-1%3A-1; wl_cbv=v2%3Bclient_version%3A2985%3Btimestamp%3A1764084357; fbl_st=100727294%3BT%3A29401406; fr=1DU5Jl03wP4b7GP8t.AWefU_KjBG8Z5AZgumwZsBRycYqwUkK410GOJ9ACH6HquX9_4fk.BoxuDH..AAA.0.0.BpJcqK.AWdFN0M6cD-SLsdpO8kcmDP_8_s; presence=C%7B%22lm3%22%3A%22sc.800019873203125%22%2C%22t3%22%3A%5B%7B%22o%22%3A0%2C%22i%22%3A%22g.1160300088952219%22%7D%5D%2C%22utc3%22%3A1764084412300%2C%22v%22%3A1%7D; wd=1280x2254; dpr=2"
 
 cookie_input = st.text_area("Cookie String", value=DEFAULT_COOKIE, height=100)
-# --- NEW PIN INPUT ---
-user_pin = st.text_input("Enter 6-Digit PIN (For Restore Screen)", max_chars=6, type="password", help="Enter your 888888 PIN here")
+user_pin = st.text_input("Enter 6-Digit PIN (Optional)", max_chars=6, type="password")
 
 st.subheader("2. Message Details")
 target_url = st.text_input("Chat URL", value="https://www.facebook.com/messages/e2ee/t/800019873203125")
@@ -48,7 +47,6 @@ def get_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     
-    # Auto-detect logic
     chromium_path = shutil.which("chromium")
     chromedriver_path = shutil.which("chromedriver")
     
@@ -68,63 +66,58 @@ def get_driver():
         st.error("❌ Driver not found. Please REBOOT App.")
         return None
 
-# --- 🔥 PIN ENTRY LOGIC 🔥 ---
-def handle_pin_verification(driver, pin_code):
-    """
-    यह फंक्शन चेक करेगा कि 'Enter PIN' वाली स्क्रीन है या नहीं।
-    अगर है, तो वह 6 डिब्बों में आपका PIN भर देगा।
-    """
-    if not pin_code:
-        return # अगर यूजर ने PIN नहीं दिया तो कुछ मत करो
-
-    st.text("Checking for PIN Lock...")
-    time.sleep(2)
+# --- 🔥 THE AGGRESSIVE BYPASS FUNCTION 🔥 ---
+def force_bypass_popup(driver):
+    st.info("⚡ Activating Aggressive Bypass Mode...")
     
-    # चेक करो कि स्क्रीन पर "PIN" शब्द है क्या
-    page_source = driver.page_source.lower()
-    if "enter your pin" in page_source or "secure storage" in page_source:
-        st.info(f"🔒 PIN Lock Detected! Entering PIN: {pin_code}")
+    # "Trying Trying" Logic: Try for 5 iterations
+    for i in range(1, 6):
+        st.text(f"Attempt {i}/5 to find the blue button...")
         
+        # 1. Try Clicking 'Don't Restore' (Blue Button)
+        # We look for ANY element that contains the text "restore messages" or "Don't restore"
+        found_something = False
         try:
-            # Facebook के PIN inputs अक्सर input[type='tel'] या input[type='text'] होते हैं
-            # और वो Dialog के अंदर होते हैं
-            inputs = driver.find_elements(By.CSS_SELECTOR, "input[type='tel']")
+            # XPATH strategy: Find any tag containing the text
+            buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'restore messages')]")
             
-            # अगर 'tel' वाले नहीं मिले, तो simple 'input' ढूंढो
-            if len(inputs) < 6:
-                inputs = driver.find_elements(By.CSS_SELECTOR, "div[role='dialog'] input")
-            
-            # अब PIN डालो
-            if len(inputs) >= 6:
-                for i in range(6):
-                    # हर बॉक्स में एक नंबर डालो
-                    inputs[i].send_keys(pin_code[i])
-                    time.sleep(0.1) # थोड़ा रुको ताकि Facebook डिटेक्ट कर ले
-                
-                st.success("PIN Entered! Unlocking... 🔓")
-                time.sleep(5) # अनलॉक होने का वेट करो
-            else:
-                st.warning("PIN screen found but inputs not visible.")
-                
-        except Exception as e:
-            st.error(f"Failed to enter PIN: {e}")
+            # Add searching for the button wrapper specifically
+            buttons += driver.find_elements(By.XPATH, "//div[@role='button']//span[contains(text(), 'restore')]")
 
-# --- 🔥 POPUP CLEANER 🔥 ---
-def eliminate_popups(driver):
-    """ 'Don't Restore' और 'Close' बटन को हटाने के लिए """
-    try:
-        # 1. Don't Restore Button
-        buttons = driver.find_elements(By.XPATH, "//*[contains(text(), \"Don't restore messages\")]")
-        for btn in buttons:
-            driver.execute_script("arguments[0].click();", btn)
-            st.toast("Skipped Restore Screen ⏩")
-            time.sleep(2)
+            if buttons:
+                for btn in buttons:
+                    # Highlight it (Yellow)
+                    driver.execute_script("arguments[0].style.border='5px solid yellow'", btn)
+                    time.sleep(0.5)
+                    # FORCE CLICK (Javascript)
+                    driver.execute_script("arguments[0].click();", btn)
+                    st.toast(f"Boom! Clicked button on Attempt {i} 💥")
+                    found_something = True
+                    time.sleep(3) # Wait for page to react
+        except Exception as e:
+            print(f"Bypass error: {e}")
+
+        # 2. Try Clicking 'X' (Close) Button as backup
+        try:
+            close_btns = driver.find_elements(By.CSS_SELECTOR, 'div[aria-label="Close"]')
+            for c_btn in close_btns:
+                driver.execute_script("arguments[0].click();", c_btn)
+                st.toast("Clicked X button")
+                found_something = True
+        except:
+            pass
             
-        # 2. Close 'X' Button
-        close_btn = driver.find_element(By.CSS_SELECTOR, 'div[aria-label="Close"]')
-        driver.execute_script("arguments[0].click();", close_btn)
-    except:
-        pass
+        # Check if Message Box is now visible? If yes, break loop
+        try:
+            if driver.find_elements(By.CSS_SELECTOR, 'div[aria-label="Message"]'):
+                st.success("Bypass Successful! Message box found. ✅")
+                return True
+        except:
+            pass
+            
+        time.sleep(2) # Wait before next "Trying"
+
+    return False
 
 # --- MAIN EXECUTION ---
 
@@ -149,18 +142,20 @@ if st.button("Start Messaging"):
             
             status_box.text("Opening Chat...")
             driver.get(target_url)
-            time.sleep(8) 
+            time.sleep(10) # Wait for popup to fully load
 
-            # --- STEP 1: PIN डालो (अगर मांग रहा है) ---
-            handle_pin_verification(driver, user_pin)
-            
-            # --- STEP 2: अगर PIN नहीं माँगा, तो Popup हटाओ ---
-            eliminate_popups(driver)
+            # --- 🔥 RUN BYPASS 🔥 ---
+            force_bypass_popup(driver)
+            # -----------------------
 
             msg_box = None
-            selectors = ['div[aria-label="Message"]', 'div[contenteditable="true"]', 'div[role="textbox"]']
+            selectors = [
+                'div[aria-label="Message"]', 
+                'div[contenteditable="true"]', 
+                'div[role="textbox"]'
+            ]
 
-            # Message Box ढूँढो
+            # Try to find message box
             for selector in selectors:
                 try:
                     msg_box = driver.find_element(By.CSS_SELECTOR, selector)
@@ -173,7 +168,7 @@ if st.button("Start Messaging"):
                 keep_running = True
                 while keep_running:
                     try:
-                        # Re-find element logic
+                        # Re-find logic
                         for selector in selectors:
                             try:
                                 msg_box = driver.find_element(By.CSS_SELECTOR, selector)
@@ -193,17 +188,18 @@ if st.button("Start Messaging"):
                         else:
                             time.sleep(delay_time)
                     except Exception as e:
-                        st.error(f"Loop Error: {e}")
+                        st.error(f"Sending Error: {e}")
                         break
                 st.success("Done.")
             else:
-                st.error("Message Box Not Found (PIN or Popup blocked it).")
-                driver.save_screenshot("final_debug.png")
-                st.image("final_debug.png")
+                st.error("Message Box Not Found.")
+                st.write("The popup might still be there. Check screenshot:")
+                driver.save_screenshot("bypass_fail.png")
+                st.image("bypass_fail.png")
 
         except Exception as e:
             st.error(f"Critical Error: {e}")
         finally:
             if not enable_infinite:
                 driver.quit()
-    
+                
