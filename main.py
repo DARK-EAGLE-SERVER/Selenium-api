@@ -1,10 +1,10 @@
-import os
-import time
-import shutil
 import threading
 import uuid
-import datetime
-import streamlit as st
+import time
+import os
+import shutil
+from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -12,45 +12,40 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="Background FB Sender", layout="centered")
-st.title("FB Sender (Background Mode 🚀)")
+app = FastAPI()
 
-# --- GLOBAL TASK MANAGER (The Brain) ---
-# यह function ensure करता है कि डेटा browser बंद होने पर भी memory में रहे
-@st.cache_resource
-class TaskManager:
-    def __init__(self):
-        self.tasks = {}  # Stores all tasks: {id: {status, logs, count, stop_signal}}
+# --- GLOBAL STORE ---
+tasks = {}
 
-    def create_task(self):
-        task_id = str(uuid.uuid4())[:8]  # Short unique ID
-        self.tasks[task_id] = {
-            "status": "Running",
-            "logs": [],
-            "count": 0,
-            "stop": False,
-            "start_time": datetime.datetime.now()
-        }
-        return task_id
+# --- MODELS ---
+class TaskInput(BaseModel):
+    cookie: str
+    url: str
+    message: str
+    delay: int = 2
+    infinite: bool = False
 
-    def get_task(self, task_id):
-        return self.tasks.get(task_id)
+# --- SELENIUM LOGIC ---
+def get_driver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    
+    # Auto-detect paths (Linux/Cloud friendly)
+    chromium_path = shutil.which("chromium") or "/usr/bin/chromium"
+    chromedriver_path = shutil.which("chromedriver") or "/usr/bin/chromedriver"
 
-    def log_update(self, task_id, message):
-        if task_id in self.tasks:
-            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            self.tasks[task_id]["logs"].append(f"[{timestamp}] {message}")
+    if os.path.exists(chromium_path) and os.path.exists(chromedriver_path):
+        chrome_options.binary_location = chromium_path
+        service = Service(chromedriver_path)
+        try:
+            return webdriver.Chrome(service=service, options=chrome_options)
+        except:
+            return None
+    return None
 
-    def stop_task(self, task_id):
-        if task_id in self.tasks:
-            self.tasks[task_id]["stop"] = True
-            self.tasks[task_id]["status"] = "Stopped by User"
-
-# Initialize Manager
-manager = TaskManager()
-
-# --- SELENIUM HELPERS ---
 def parse_cookies(cookie_string):
     cookies = []
     try:
@@ -63,180 +58,98 @@ def parse_cookies(cookie_string):
     except:
         return []
 
-def get_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    
-    chromium_path = shutil.which("chromium")
-    chromedriver_path = shutil.which("chromedriver")
-    
-    if not chromium_path or not chromedriver_path:
-        if os.path.exists("/usr/bin/chromium"): chromium_path = "/usr/bin/chromium"
-        if os.path.exists("/usr/bin/chromedriver"): chromedriver_path = "/usr/bin/chromedriver"
-
-    if chromium_path and chromedriver_path:
-        chrome_options.binary_location = chromium_path
-        service = Service(chromedriver_path)
-        try:
-            return webdriver.Chrome(service=service, options=chrome_options)
-        except Exception:
-            return None
-    return None
-
-def hunt_down_buttons(driver, task_id):
-    # Log to global manager instead of st.write
-    # manager.log_update(task_id, "Scanning for popups...")
-    try:
-        xpaths = [
-            "//div[@role='button']//span[contains(text(), 'Continue')]",
-            "//*[contains(text(), 'restore messages')]",
-            "//div[@aria-label='Continue']",
-            "//div[@aria-label='Close']"
-        ]
-        for xpath in xpaths:
-            btns = driver.find_elements(By.XPATH, xpath)
-            for btn in btns:
-                if btn.is_displayed():
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(1)
-    except:
-        pass
-
-def send_message_safely(driver, text):
-    selectors = ['div[aria-label="Message"]', 'div[contenteditable="true"]', 'div[role="textbox"]']
-    msg_box = None
-    for selector in selectors:
-        try:
-            msg_box = driver.find_element(By.CSS_SELECTOR, selector)
-            if msg_box: break
-        except:
-            continue
-            
-    if msg_box:
-        try:
-            driver.execute_script("arguments[0].focus();", msg_box)
-            actions = ActionChains(driver)
-            actions.send_keys(text)
-            actions.send_keys(Keys.RETURN)
-            actions.perform()
-            return True
-        except:
-            return False
-    return False
-
-# --- BACKGROUND WORKER ---
-def run_background_task(task_id, cookie_str, url, msg, delay, is_infinite):
-    manager.log_update(task_id, "Starting Driver...")
+def worker_process(task_id, data: TaskInput):
+    tasks[task_id]["status"] = "Initializing Driver..."
     driver = get_driver()
     
     if not driver:
-        manager.log_update(task_id, "Error: Driver Failed")
-        manager.tasks[task_id]["status"] = "Failed"
+        tasks[task_id]["status"] = "Failed: Driver Error"
         return
 
     try:
         driver.get("https://www.facebook.com/")
-        cookies = parse_cookies(cookie_str)
+        cookies = parse_cookies(data.cookie)
         for c in cookies:
             try: driver.add_cookie(c)
             except: pass
-        
-        manager.log_update(task_id, "Navigating to Chat...")
-        driver.get(url)
+            
+        tasks[task_id]["status"] = "Navigating to Chat..."
+        driver.get(data.url)
         time.sleep(8)
         
-        hunt_down_buttons(driver, task_id)
+        # Popup Hunter
+        try:
+            btns = driver.find_elements(By.XPATH, "//div[@role='button']//span[contains(text(), 'Continue')]")
+            for btn in btns: driver.execute_script("arguments[0].click();", btn)
+        except: pass
+
+        tasks[task_id]["status"] = "Running"
         
-        keep_running = True
-        while keep_running:
-            # CHECK STOP SIGNAL
-            if manager.tasks[task_id]["stop"]:
-                manager.log_update(task_id, "Stop signal received.")
-                break
-
-            success = send_message_safely(driver, msg)
-            
-            if success:
-                manager.tasks[task_id]["count"] += 1
-                current_count = manager.tasks[task_id]["count"]
-                manager.log_update(task_id, f"Sent Message #{current_count}")
+        while not tasks[task_id]["stop"]:
+            # Logic to send message
+            sent = False
+            try:
+                selectors = ['div[aria-label="Message"]', 'div[role="textbox"]']
+                msg_box = None
+                for s in selectors:
+                    try: 
+                        msg_box = driver.find_element(By.CSS_SELECTOR, s)
+                        if msg_box: break
+                    except: continue
                 
-                if not is_infinite:
-                    keep_running = False
-                    manager.tasks[task_id]["status"] = "Completed"
-                else:
-                    time.sleep(delay)
-            else:
-                manager.log_update(task_id, "Send Failed. Retrying...")
-                time.sleep(5)
-                hunt_down_buttons(driver, task_id)
+                if msg_box:
+                    driver.execute_script("arguments[0].focus();", msg_box)
+                    actions = ActionChains(driver)
+                    actions.send_keys(data.message)
+                    actions.send_keys(Keys.RETURN)
+                    actions.perform()
+                    sent = True
+            except:
+                sent = False
 
+            if sent:
+                tasks[task_id]["count"] += 1
+                tasks[task_id]["logs"].append(f"Sent Msg #{tasks[task_id]['count']}")
+                if not data.infinite:
+                    tasks[task_id]["status"] = "Completed"
+                    break
+                time.sleep(data.delay)
+            else:
+                time.sleep(5) # Retry delay
+                
     except Exception as e:
-        manager.log_update(task_id, f"Error: {str(e)}")
-        manager.tasks[task_id]["status"] = "Error"
+        tasks[task_id]["status"] = f"Error: {str(e)}"
     finally:
         driver.quit()
-        if manager.tasks[task_id]["status"] == "Running":
-            manager.tasks[task_id]["status"] = "Finished"
+        if tasks[task_id]["status"] == "Running":
+            tasks[task_id]["status"] = "Stopped"
 
-# --- UI TABS ---
-tab1, tab2 = st.tabs(["🆕 New Task", "🔍 Check Status"])
+# --- API ENDPOINTS ---
 
-# TAB 1: CREATE TASK
-with tab1:
-    st.subheader("Start New Automation")
-    cookie_input = st.text_area("Cookie", height=70)
-    target_url = st.text_input("Chat URL", "https://www.facebook.com/messages/e2ee/...")
-    message_text = st.text_input("Message", "Hello!")
-    
-    c1, c2 = st.columns(2)
-    enable_infinite = c1.checkbox("Infinite Loop", False)
-    delay_time = c2.number_input("Delay (sec)", 2, 60, 2)
+@app.get("/")
+def home():
+    return {"message": "FB Sender API is Running 🚀"}
 
-    if st.button("🚀 Start Background Task"):
-        if not cookie_input or not target_url:
-            st.error("Please fill all fields")
-        else:
-            # 1. Create ID
-            new_id = manager.create_task()
-            
-            # 2. Start Thread
-            t = threading.Thread(
-                target=run_background_task, 
-                args=(new_id, cookie_input, target_url, message_text, delay_time, enable_infinite)
-            )
-            t.start()
-            
-            # 3. Show User
-            st.success(f"Task Started! Your ID is: **{new_id}**")
-            st.info("⚠️ Copy this ID. You can close the browser now. Come back and check status in 'Check Status' tab.")
+@app.post("/start_task")
+def start_task(data: TaskInput, background_tasks: BackgroundTasks):
+    task_id = str(uuid.uuid4())[:8]
+    tasks[task_id] = {
+        "status": "Starting",
+        "count": 0,
+        "logs": [],
+        "stop": False
+    }
+    # Run in background
+    background_tasks.add_task(worker_process, task_id, data)
+    return {"task_id": task_id, "message": "Task Started"}
 
-# TAB 2: CHECK STATUS
-with tab2:
-    st.subheader("Monitor Task")
-    check_id = st.text_input("Enter Task ID")
-    
-    if st.button("Check Progress") or check_id:
-        task_data = manager.get_task(check_id)
-        
-        if task_data:
-            st.write(f"**Status:** {task_data['status']}")
-            st.write(f"**Messages Sent:** {task_data['count']}")
-            st.write(f"**Start Time:** {task_data['start_time']}")
-            
-            with st.expander("View Logs", expanded=True):
-                # Show last 10 logs
-                for log in task_data['logs'][-10:]:
-                    st.text(log)
-            
-            if task_data['status'] == "Running":
-                if st.button("🛑 Stop Task"):
-                    manager.stop_task(check_id)
-                    st.rerun()
-        else:
-            if check_id:
-                st.error("Task ID not found or server restarted.")
+@app.get("/status/{task_id}")
+def get_status(task_id: str):
+    return tasks.get(task_id, {"error": "Task ID not found"})
 
+@app.post("/stop/{task_id}")
+def stop_task(task_id: str):
+    if task_id in tasks:
+        tasks[task_id]["stop"] = True
+        return {"message": "Stop signal sent"}
+    return {"error": "Invalid ID"}
